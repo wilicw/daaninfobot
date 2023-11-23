@@ -4,6 +4,7 @@ use grammers_session::Session;
 use rand::Rng;
 use std::env;
 use std::io::{self, BufRead as _, Write as _};
+use std::sync::Arc;
 use teloxide::{
     prelude::*,
     types::{InputFile, MessageEntityKind},
@@ -28,7 +29,7 @@ fn prompt(message: &str) -> Result<String> {
     Ok(line)
 }
 
-async fn resolve_user(username: String) -> Result<String> {
+async fn init_tg_client() -> Result<Client> {
     let api_id = env::var("TG_ID").unwrap().parse().expect("TG_ID invalid");
     let api_hash = &env::var("TG_HASH").unwrap();
 
@@ -84,11 +85,7 @@ async fn resolve_user(username: String) -> Result<String> {
         drop(client.sign_out_disconnect().await);
     }
 
-    if let Some(chat) = client.resolve_username(&username).await? {
-        return Ok(chat.id().to_string());
-    }
-
-    Ok("".to_string())
+    Ok(client)
 }
 
 const HELP: &str = r#"
@@ -110,16 +107,13 @@ enum Command {
     Dinner,
 }
 
-fn dinner(options: String) -> String {
-    let arr: Vec<&str> = options.split_whitespace().collect();
-    let mut rng = rand::thread_rng();
-    let index = rng.gen_range(0..arr.len());
-    return arr[index].to_string();
-}
-
-async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
+async fn message_parser(
+    bot: Bot,
+    msg: Message,
+    cmd: Command,
+    client: Arc<Client>,
+) -> ResponseResult<()> {
     let full_text = msg.text().unwrap();
-    dbg!(full_text);
     match cmd {
         Command::Start | Command::Help => {
             bot.send_message(msg.chat.id, HELP)
@@ -145,14 +139,10 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
                 match &entity.kind {
                     MessageEntityKind::Mention => {
                         username = full_text.get(offset + 1..offset + length).unwrap();
-                        user_id = UserId(
-                            resolve_user(username.to_string())
-                                .await
-                                .unwrap()
-                                .parse()
-                                .unwrap(),
-                        );
-                        title = full_text.get(offset + length..).unwrap();
+                        if let Ok(Some(chat)) = client.resolve_username(&username).await {
+                            user_id = UserId(chat.id().to_string().parse().unwrap());
+                            title = full_text.get(offset + length..).unwrap();
+                        }
                         break;
                     }
                     MessageEntityKind::TextMention { user } => {
@@ -168,7 +158,7 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
             if title.is_empty() | (user_id == UserId(0)) | username.is_empty() {
                 bot.send_message(
                     msg.chat.id,
-                    "請輸入選項 e.g. /title user string".to_string(),
+                    "請輸入選項 e.g. /title @user string".to_string(),
                 )
                 .await?
             } else {
@@ -189,11 +179,8 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
                     bot.send_message(msg.chat.id, format!("{} 的標籤變更失敗", username))
                         .await?
                 } else {
-                    bot.send_message(
-                        msg.chat.id,
-                        format!("{} 的標籤已變更為 {}", username, title),
-                    )
-                    .await?
+                    bot.send_message(msg.chat.id, format!("{} 的標籤已變更為{}", username, title))
+                        .await?
                 }
             }
         }
@@ -202,7 +189,15 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
             if full_text.split_whitespace().count() < 2 {
                 result = "請輸入選項 e.g. /dinner 八方雲集 Sukiya 臺鐵便當 元氣".to_string();
             } else {
-                result = dinner(full_text.splitn(2, ' ').nth(1).unwrap().to_string());
+                let arr: Vec<&str> = full_text
+                    .splitn(2, ' ')
+                    .nth(1)
+                    .unwrap()
+                    .split_whitespace()
+                    .collect();
+                let mut rng = rand::thread_rng();
+                let index = rng.gen_range(0..arr.len());
+                result = arr[index].to_string();
             }
             bot.send_message(msg.chat.id, result).await?
         }
@@ -215,7 +210,19 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
 async fn main() {
     dotenv().ok();
     pretty_env_logger::init();
+    let client = Arc::new(init_tg_client().await.unwrap());
 
     let bot = Bot::from_env();
-    Command::repl(bot, message_parser).await;
+    let handler =
+        Update::filter_message().branch(dptree::entry().filter_command::<Command>().endpoint(
+            move |msg: Message, bot: Bot, cmd: Command| {
+                let _client = Arc::clone(&client);
+                async move { message_parser(bot, msg, cmd, _client).await }
+            },
+        ));
+    Dispatcher::builder(bot, handler) // Command::repl(bot, message_parser).await;
+        .enable_ctrlc_handler()
+        .build()
+        .dispatch()
+        .await;
 }
