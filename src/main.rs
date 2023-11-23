@@ -91,12 +91,12 @@ async fn resolve_user(username: String) -> Result<String> {
 }
 
 const HELP: &str = r#"
-#歡迎光臨洗手室
-/help - 檢視說明
-/roll - 擲骰子
-/title user string  - 變更使用者標籤
-/dinner options... - 晚餐吃什麼
-    e.g. /dinner 八方雲集 Sukiya 臺鐵便當 元氣
+\#歡迎光臨洗手室
+/help \- 檢視說明
+/roll \- 擲骰子
+/title *@user* *string*  \- 變更使用者標籤
+/dinner *options\.\.\.* \- 晚餐吃什麼
+    e\.g\. `/dinner 八方雲集 Sukiya 臺鐵便當 元氣`
 "#;
 
 #[derive(BotCommands, Clone)]
@@ -120,7 +120,11 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
     let full_text = msg.text().unwrap();
     dbg!(full_text);
     match cmd {
-        Command::Start | Command::Help => bot.send_message(msg.chat.id, HELP).await?,
+        Command::Start | Command::Help => {
+            bot.send_message(msg.chat.id, HELP)
+                .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+                .await?
+        }
         Command::Roll => {
             if rand::thread_rng().gen_range(0..=2) == 0 {
                 bot.send_animation(msg.chat.id, InputFile::file("./rickroll-roll.gif"))
