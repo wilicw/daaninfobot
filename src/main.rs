@@ -1,3 +1,4 @@
+use dotenv::dotenv;
 use grammers_client::{Client, Config, SignInError};
 use grammers_session::Session;
 use rand::Rng;
@@ -28,8 +29,8 @@ fn prompt(message: &str) -> Result<String> {
 }
 
 async fn resolve_user(username: String) -> Result<String> {
-    let api_id = env!("TG_ID").parse().expect("TG_ID invalid");
-    let api_hash = env!("TG_HASH").to_string();
+    let api_id = env::var("TG_ID").unwrap().parse().expect("TG_ID invalid");
+    let api_hash = &env::var("TG_HASH").unwrap();
 
     println!("Connecting to Telegram...");
     let client = Client::connect(Config {
@@ -140,6 +141,7 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
             for entity in msg.entities().unwrap() {
                 let offset = entity.offset;
                 let length = entity.length;
+                dbg!(&msg);
                 match &entity.kind {
                     MessageEntityKind::Mention => {
                         username = full_text.get(offset + 1..offset + length).unwrap();
@@ -150,13 +152,13 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
                                 .parse()
                                 .unwrap(),
                         );
-                        title = full_text.get(offset + length + 0..).unwrap();
+                        title = full_text.get(offset + length..).unwrap();
                         break;
                     }
                     MessageEntityKind::TextMention { user } => {
                         username = full_text.get(offset + 0..offset + length).unwrap();
                         user_id = user.id;
-                        title = full_text.get(offset + length + 1..).unwrap();
+                        title = full_text.get(offset + length..).unwrap();
                         break;
                     }
                     _ => {}
@@ -211,6 +213,7 @@ async fn message_parser(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
     pretty_env_logger::init();
 
     let bot = Bot::from_env();
