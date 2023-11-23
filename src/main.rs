@@ -117,12 +117,16 @@ async fn message_parser(
     match cmd {
         Command::Start | Command::Help => {
             bot.send_message(msg.chat.id, HELP)
+                .reply_to_message_id(msg.id)
+                .disable_notification(true)
                 .parse_mode(teloxide::types::ParseMode::MarkdownV2)
                 .await?
         }
         Command::Roll => {
             if rand::thread_rng().gen_range(0..=2) == 0 {
                 bot.send_animation(msg.chat.id, InputFile::file("./rickroll-roll.gif"))
+                    .reply_to_message_id(msg.id)
+                    .disable_notification(true)
                     .await?
             } else {
                 bot.send_dice(msg.chat.id).await?
@@ -160,6 +164,8 @@ async fn message_parser(
                     msg.chat.id,
                     "請輸入選項 e.g. /title @user string".to_string(),
                 )
+                .reply_to_message_id(msg.id)
+                .disable_notification(true)
                 .await?
             } else {
                 let steps = async {
@@ -177,9 +183,13 @@ async fn message_parser(
 
                 if let Err(_err) = steps.await {
                     bot.send_message(msg.chat.id, format!("{} 的標籤變更失敗", username))
+                        .reply_to_message_id(msg.id)
+                        .disable_notification(true)
                         .await?
                 } else {
                     bot.send_message(msg.chat.id, format!("{} 的標籤已變更為{}", username, title))
+                        .reply_to_message_id(msg.id)
+                        .disable_notification(true)
                         .await?
                 }
             }
@@ -199,7 +209,10 @@ async fn message_parser(
                 let index = rng.gen_range(0..arr.len());
                 result = arr[index].to_string();
             }
-            bot.send_message(msg.chat.id, result).await?
+            bot.send_message(msg.chat.id, result)
+                .reply_to_message_id(msg.id)
+                .disable_notification(true)
+                .await?
         }
     };
 
