@@ -11,3 +11,11 @@ log = "0.4"
 pretty_env_logger = "0.5"
 tokio = { version =  "1.34", features = ["rt-multi-thread", "macros"] }
 rand = "0.8"
+futures-util = "0.3"
+grammers-client = "0.5"
+grammers-crypto = "0.5.1"
+grammers-mtproto = "0.5.0"
+grammers-mtsender = "0.5.0"
+grammers-session = "0.5.1"
+grammers-tl-types = { version = "0.5.1", features = ["tl-mtproto"] }
+
