@@ -89,6 +89,7 @@ const HELP: &str = r#"
 /help \- 檢視說明
 /roll \- 擲骰子
 /title *@user* *string*  \- 變更使用者標籤
+/untitle *@user* \- 移除使用者標籤
 /dinner *options\.\.\.* \- 晚餐吃什麼
     e\.g\. `/dinner 八方雲集 Sukiya 臺鐵便當 元氣`
 "#;
@@ -100,6 +101,7 @@ enum Command {
     Help,
     Roll,
     Title,
+    UnTitle,
     Dinner,
 }
 
@@ -130,6 +132,64 @@ async fn message_parser(
                 .await?
             } else {
                 bot.send_dice(msg.chat.id).await?
+            }
+        }
+        Command::UnTitle => {
+            let mut user_id: UserId = UserId(0);
+            let mut username: &str = "";
+            if let Some(entities) = msg.entities() {
+                for entity in entities {
+                    let offset = entity.offset;
+                    let length = entity.length;
+                    match &entity.kind {
+                        MessageEntityKind::Mention => {
+                            if let Some(_username) = full_text.get(offset + 1..offset + length) {
+                                if let Ok(Some(chat)) = client.resolve_username(&_username).await {
+                                    username = _username;
+                                    user_id = UserId(chat.id().to_string().parse().unwrap());
+                                }
+                            }
+                            break;
+                        }
+                        MessageEntityKind::TextMention { user } => {
+                            username = &user.first_name;
+                            user_id = user.id;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            if (user_id == UserId(0)) | username.is_empty() {
+                bot.send_message(
+                    msg.chat.id,
+                    "指令解析失敗，請輸入選項 e.g. /untitle @user".to_string(),
+                )
+                .reply_to_message_id(msg.id)
+                .disable_notification(true)
+                .await?
+            } else {
+                if let Err(_) = bot
+                    .promote_chat_member(msg.chat.id, user_id)
+                    .can_change_info(false)
+                    .can_delete_messages(false)
+                    .can_invite_users(false)
+                    .can_restrict_members(false)
+                    .can_pin_messages(false)
+                    .can_promote_members(false)
+                    .await
+                {
+                    bot.send_message(msg.chat.id, format!("{} 的標籤移除失敗", username))
+                        .reply_to_message_id(msg.id)
+                        .disable_notification(true)
+                        .await?
+                } else {
+                    bot.send_message(msg.chat.id, format!("{} 的標籤已移除", username))
+                        .reply_to_message_id(msg.id)
+                        .disable_notification(true)
+                        .await?
+                }
             }
         }
         Command::Title => {
