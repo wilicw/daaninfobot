@@ -5,11 +5,7 @@ use rand::Rng;
 use std::env;
 use std::io::{self, BufRead as _, Write as _};
 use std::sync::Arc;
-use teloxide::{
-    prelude::*,
-    types::{InputFile, MessageEntityKind},
-    utils::command::BotCommands,
-};
+use teloxide::{prelude::*, types::MessageEntityKind, utils::command::BotCommands};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -124,10 +120,14 @@ async fn message_parser(
         }
         Command::Roll => {
             if rand::thread_rng().gen_range(0..=2) == 0 {
-                bot.send_animation(msg.chat.id, InputFile::file("./rickroll-roll.gif"))
-                    .reply_to_message_id(msg.id)
-                    .disable_notification(true)
-                    .await?
+                bot.send_message(
+                    msg.chat.id,
+                    "[Never gonna give you up](https://www.youtube.com/watch?v=dQw4w9WgXcQ)",
+                )
+                .reply_to_message_id(msg.id)
+                .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+                .disable_notification(true)
+                .await?
             } else {
                 bot.send_dice(msg.chat.id).await?
             }
@@ -136,33 +136,45 @@ async fn message_parser(
             let mut title: &str = "";
             let mut user_id: UserId = UserId(0);
             let mut username: &str = "";
-            for entity in msg.entities().unwrap() {
-                let offset = entity.offset;
-                let length = entity.length;
-                dbg!(&msg);
-                match &entity.kind {
-                    MessageEntityKind::Mention => {
-                        username = full_text.get(offset + 1..offset + length).unwrap();
-                        if let Ok(Some(chat)) = client.resolve_username(&username).await {
-                            user_id = UserId(chat.id().to_string().parse().unwrap());
-                            title = full_text.get(offset + length..).unwrap();
+            if let Some(entities) = msg.entities() {
+                for entity in entities {
+                    let offset = entity.offset;
+                    let length = entity.length;
+                    match &entity.kind {
+                        MessageEntityKind::Mention => {
+                            if let Some(_username) = full_text.get(offset + 1..offset + length) {
+                                if let Some(_title) = full_text.get(offset + length..) {
+                                    if let Ok(Some(chat)) =
+                                        client.resolve_username(&_username).await
+                                    {
+                                        title = _title;
+                                        username = _username;
+                                        user_id = UserId(chat.id().to_string().parse().unwrap());
+                                    }
+                                }
+                            }
+                            break;
                         }
-                        break;
+                        MessageEntityKind::TextMention { user } => {
+                            dbg!(entity, full_text);
+                            if let Some(start) = full_text.char_indices().nth(offset + length) {
+                                if let Some(_title) = full_text.get(start.0..) {
+                                    title = _title.trim();
+                                    username = &user.first_name;
+                                    user_id = user.id;
+                                }
+                            }
+                            break;
+                        }
+                        _ => {}
                     }
-                    MessageEntityKind::TextMention { user } => {
-                        username = full_text.get(offset + 0..offset + length).unwrap();
-                        user_id = user.id;
-                        title = full_text.get(offset + length..).unwrap();
-                        break;
-                    }
-                    _ => {}
                 }
             }
 
             if title.is_empty() | (user_id == UserId(0)) | username.is_empty() {
                 bot.send_message(
                     msg.chat.id,
-                    "請輸入選項 e.g. /title @user string".to_string(),
+                    "指令解析失敗，請輸入選項 e.g. /title @user string".to_string(),
                 )
                 .reply_to_message_id(msg.id)
                 .disable_notification(true)
@@ -181,7 +193,7 @@ async fn message_parser(
                         .await
                 };
 
-                if let Err(_err) = steps.await {
+                if let Err(_) = steps.await {
                     bot.send_message(msg.chat.id, format!("{} 的標籤變更失敗", username))
                         .reply_to_message_id(msg.id)
                         .disable_notification(true)
@@ -195,19 +207,14 @@ async fn message_parser(
             }
         }
         Command::Dinner => {
-            let result: String;
-            if full_text.split_whitespace().count() < 2 {
-                result = "請輸入選項 e.g. /dinner 八方雲集 Sukiya 臺鐵便當 元氣".to_string();
-            } else {
-                let arr: Vec<&str> = full_text
-                    .splitn(2, ' ')
-                    .nth(1)
-                    .unwrap()
-                    .split_whitespace()
-                    .collect();
+            let result: &str;
+            if let Some(part) = full_text.splitn(2, ' ').nth(1) {
+                let arr: Vec<&str> = part.split_whitespace().collect();
                 let mut rng = rand::thread_rng();
                 let index = rng.gen_range(0..arr.len());
-                result = arr[index].to_string();
+                result = arr[index];
+            } else {
+                result = "請輸入選項 e.g. /dinner 八方雲集 Sukiya 臺鐵便當 元氣";
             }
             bot.send_message(msg.chat.id, result)
                 .reply_to_message_id(msg.id)
